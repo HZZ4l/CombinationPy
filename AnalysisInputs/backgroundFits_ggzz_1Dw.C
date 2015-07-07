@@ -38,33 +38,71 @@ using namespace std;
 #include "Config.h"
 //<----------
 
+int category(
+	     int nExtraLeptons,
+	     float ZZPt,
+	     float ZZMass,
+	     int nJets, 
+	     int nBTaggedJets,
+	     //float* jetpt,
+	     //float* jeteta,
+	     //float* jetphi,
+	     //float* jetmass,
+	     float Fisher
+	     )
+{
+  
+  int category = -1;
+  // 0 = Untagged  
+  // 1 = 1-jet tagged  
+  // 2 = VBF tagged  
+  // 3 = VH-leptonic tagged  
+  // 4 = VH-hadronic tagged  
+  // 5 = ttH tagged  
+
+  if( nExtraLeptons==0 && nJets>=2 && nBTaggedJets<=1 && Fisher>0.5 ){
+    
+    category = 2; // VBF tagged
+    
+  }else if( ( nExtraLeptons==0 && nJets>=2 && ZZPt>ZZMass && false /*flagDijetVH(nJets,jetpt,jeteta,jetphi,jetmass)*/ )
+            || ( nExtraLeptons==0 && nJets==2 && nBTaggedJets==2 ) ){
+
+    category = 4; // VH-hadronic tagged
+
+  }else if( nExtraLeptons>=1 && nJets<=2 && nBTaggedJets==0 ){
+
+    category = 3; // VH-leptonic tagged
+
+  }else if( nExtraLeptons>=1 || (nJets>=3 && nBTaggedJets>=1) ){
+
+    category = 5; // ttH tagged
+
+  }else if(nJets>=1){
+
+    category = 1; // 1-jet tagged
+
+  }else{
+
+    category = 0; // Untagged
+
+  }
+
+  return category;
+
+}
+
 void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag);
 
 // Run all final states and sqrts in one go
 void backgroundFits_ggzz_1Dw() {
-  gSystem->Exec("mkdir -p bkgFigs7TeV");
-  gSystem->Exec("mkdir -p bkgFigs8TeV");
+  // gSystem->Exec("mkdir -p bkgFigs7TeV");
+  gSystem->Exec("mkdir -p bkgFigs13TeV");
 
-  backgroundFits_ggzz_1Dw(1,7,1);
-  backgroundFits_ggzz_1Dw(2,7,1);
-  backgroundFits_ggzz_1Dw(3,7,1);  
-  backgroundFits_ggzz_1Dw(1,8,1);
-  backgroundFits_ggzz_1Dw(2,8,1);
-  backgroundFits_ggzz_1Dw(3,8,1);
-
-  backgroundFits_ggzz_1Dw(1,7,0);
-  backgroundFits_ggzz_1Dw(2,7,0);
-  backgroundFits_ggzz_1Dw(3,7,0);  
-  backgroundFits_ggzz_1Dw(1,8,0);
-  backgroundFits_ggzz_1Dw(2,8,0);
-  backgroundFits_ggzz_1Dw(3,8,0);
-
-  backgroundFits_ggzz_1Dw(1,7,2);
-  backgroundFits_ggzz_1Dw(2,7,2);
-  backgroundFits_ggzz_1Dw(3,7,2);  
-  backgroundFits_ggzz_1Dw(1,8,2);
-  backgroundFits_ggzz_1Dw(2,8,2);
-  backgroundFits_ggzz_1Dw(3,8,2);
+  for(int icat=0;icat<4;icat++){
+    backgroundFits_ggzz_1Dw(1,13,icat);
+    backgroundFits_ggzz_1Dw(2,13,icat);
+    backgroundFits_ggzz_1Dw(3,13,icat);
+  }
 }
 
 // The actual job
@@ -81,8 +119,7 @@ void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag)
   cout << "schannel = " << schannel << "  sqrts = " << sqrts << " VBFtag = "<< VBFtag << endl;
 
   TString outfile;
-  if(VBFtag<2) outfile = "CardFragments/ggzzBackgroundFit_" + ssqrts + "_" + schannel + "_" + Form("%d",int(VBFtag)) + ".txt";
-  if(VBFtag==2) outfile = "CardFragments/ggzzBackgroundFit_" + ssqrts + "_" + schannel + ".txt";
+  outfile = "CardFragments/ggzzBackgroundFit_" + ssqrts + "_" + schannel + "_" + Form("%d",int(VBFtag)) + ".txt";
   ofstream of(outfile,ios_base::out);
 
   gSystem->AddIncludePath("-I$ROOFITSYS/include");
@@ -90,39 +127,41 @@ void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag)
   setTDRStyle(false);
   gStyle->SetPadLeftMargin(0.16);
 	
-  TString filepath;
-  if (sqrts==7) {
-    filepath = filePath7TeV;
-  } else if (sqrts==8) {
-    filepath = filePath8TeV;
-  }
-
-  TChain* tree = new TChain("SelectedTree");
-  tree->Add( filepath+ "/" + (schannel=="2e2mu"?"2mu2e":schannel) + "/HZZ4lTree_ggZZ*.root");
-
+  TString filepath;filepath.Form("AAAOK/ZZ%s/ZZ4lAnalysis.root",schannel.Data());
+  TFile *f = TFile::Open(filepath);
+  TTree *tree = f->Get("ZZTree/candTree");
 
   RooRealVar* MC_weight = new RooRealVar("MC_weight","MC_weight",0.,2.) ; 
-  RooRealVar* ZZMass = new RooRealVar("ZZMass","ZZMass",100.,1000.);
-  RooRealVar* NJets30 = new RooRealVar("NJets30","NJets30",0.,100.);
+  RooRealVar* ZZMass = new RooRealVar("ZZMass","ZZMass",100,100.,1000.);
+  RooRealVar* NJets30 = new RooRealVar("NJets30","NJets30",0.,5.);
   RooArgSet ntupleVarSet(*ZZMass,*NJets30,*MC_weight);
   RooDataSet *set = new RooDataSet("set","set",ntupleVarSet,WeightVar("MC_weight"));
+  //RooArgSet ntupleVarSet(*ZZMass,*NJets30);  
+  //RooDataSet *set = new RooDataSet("set","set",ntupleVarSet);
 
   Float_t myMC,myMass;
-  Short_t myNJets;
+  Int_t myNJets;
   int nentries = tree->GetEntries();
 
+  Float_t myPt,myJetPt,myJetEta,myJetPhi,myJetMass,myFisher;
+  Int_t myExtralep,myBJets;
   tree->SetBranchAddress("ZZMass",&myMass);
-  tree->SetBranchAddress("MC_weight",&myMC);
-  tree->SetBranchAddress("NJets30",&myNJets);
+  tree->SetBranchAddress("genHEPMCweight",&myMC);
+  tree->SetBranchAddress("nCleanedJetsPt30",&myNJets);
+  tree->SetBranchAddress("ZZPt",&myPt);
+  tree->SetBranchAddress("nExtraLep",&myExtralep);
+  tree->SetBranchAddress("nCleanedJetsPt30BTagged",&myBJets);
+  tree->SetBranchAddress("DiJetDEta",&myFisher);
 
   for(int i =0;i<nentries;i++) {
     tree->GetEntry(i);
-    if(VBFtag==1 && myNJets<2)continue;
-    if(VBFtag==0 && myNJets>1)continue;
+    if(myMass<100.)continue;
+    int cat = category(myExtralep,myPt, myMass,myNJets, myBJets,/* jetpt, jeteta, jetphi, jetmass,*/myFisher);
+    if(VBFtag != cat )continue;
 
     ntupleVarSet.setRealValue("ZZMass",myMass);
     ntupleVarSet.setRealValue("MC_weight",myMC);
-    ntupleVarSet.setRealValue("NJets30",(double)myNJets);
+    ntupleVarSet.setRealValue("NJets30",(double)cat);
 
     set->add(ntupleVarSet, myMC);
   }
@@ -224,7 +263,7 @@ void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag)
   pt2->SetBorderSize(0);
 
   // Plot m4l and 
-  RooPlot* frameM4l = ZZMass->frame(Title("M4L"),Bins(100)) ;
+  RooPlot* frameM4l = ZZMass->frame(Title("M4L"),Bins(200)) ;
   set->plotOn(frameM4l, MarkerStyle(24)) ;
   bkg_ggzz->plotOn(frameM4l,LineColor(iLineColor)) ;
   set->plotOn(frameM4l) ;
@@ -234,13 +273,13 @@ void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag)
 
   frameM4l->GetXaxis()->SetTitle("m_{4l} [GeV]");
   frameM4l->GetYaxis()->SetTitle("a.u.");
-  frameM4l->GetYaxis()->SetRangeUser(0,0.03);
-  if(channel == 3)frameM4l->GetYaxis()->SetRangeUser(0,0.05);
-  if(VBFtag<2){
-    if(channel == 3)frameM4l->GetYaxis()->SetRangeUser(0,0.01);
-    else frameM4l->GetYaxis()->SetRangeUser(0,0.005);
-  }
-  frameM4l->GetXaxis()->SetRangeUser(100,600);
+  //frameM4l->GetYaxis()->SetRangeUser(0,0.03);
+  //if(channel == 3)frameM4l->GetYaxis()->SetRangeUser(0,0.05);
+  //if(VBFtag<2){
+  //  if(channel == 3)frameM4l->GetYaxis()->SetRangeUser(0,0.01);
+  //  else frameM4l->GetYaxis()->SetRangeUser(0,0.005);
+  //}
+  frameM4l->GetXaxis()->SetRangeUser(100,1000);
   TCanvas *c = new TCanvas("c","c",800,600);
   c->cd();
   frameM4l->Draw();
@@ -251,8 +290,24 @@ void backgroundFits_ggzz_1Dw(int channel, int sqrts, int VBFtag)
   TString outputPath = "bkgFigs";
   outputPath = outputPath+ (long) sqrts + "TeV/";
   TString outputName;
-  if(VBFtag<2) outputName =  outputPath + "bkgggzz_" + schannel + "_" + Form("%d",int(VBFtag));
-  if(VBFtag==2) outputName =  outputPath + "bkgggzz_" + schannel;
+  outputName =  outputPath + "bkgggzz_" + schannel + "_" + Form("%d",int(VBFtag));
+  c->SaveAs(outputName + ".eps");
+  c->SaveAs(outputName + ".png");
+  c->SaveAs(outputName + ".root");
+  delete c;
+
+  frameM4l->GetXaxis()->SetRangeUser(100,200);
+  TCanvas *c = new TCanvas("c","c",800,600);
+  c->cd();
+  frameM4l->Draw();
+  box2->Draw();
+  pt->Draw();
+  pt2->Draw();
+
+  TString outputPath = "bkgFigs";
+  outputPath = outputPath+ (long) sqrts + "TeV/";
+  TString outputName;
+  outputName =  outputPath + "bkgggzz_lowZoom_" + schannel + "_" + Form("%d",int(VBFtag));
   c->SaveAs(outputName + ".eps");
   c->SaveAs(outputName + ".png");
   c->SaveAs(outputName + ".root");
